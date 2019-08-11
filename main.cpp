@@ -3,11 +3,11 @@
 #include <stdexcept>
 #include <iostream>
 #include <fstream>
+#include <curses.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <fcntl.h>
-#include <cstring>
 
 using namespace std;
 
@@ -75,58 +75,17 @@ ostream &operator<<(ostream &os, Position p)
     return os << "{ " << p.x << ", " << p.y << " }";
 }
 
-#define CSI "\e["
-
-void setcursor(int fd, int x, int y)
-{
-    auto str = CSI + to_string(y) + ';' + to_string(x) + "f";
-    write(fd, str.c_str(), str.size());
-}
-
-void showCursor(bool show)
-{
-    if (show)
-    {
-        puts(CSI "?25h");
-    }
-    else
-    {
-        fputs(CSI "?25l");
-    }
-}
-#undef CSI
-
-int getinput(int fd)
-{
-    int byte = 0;
-    recv(fd, &byte, 1, 0);
-    return byte;
-}
-
-int kbhit()
-{
-    struct timeval tv;
-    fd_set fds;
-    tv.tv_sec = 0;
-    tv.tv_usec = 0;
-    FD_ZERO(&fds);
-    FD_SET(STDIN_FILENO, &fds);
-    select(STDIN_FILENO + 1, &fds, NULL, NULL, &tv);
-    return (FD_ISSET(0, &fds));
-}
-
 // Entity is a render node
 class Entity
 {
     Position pos = {0};
     char icon = ' ';
-    int fd;
+    WINDOW *wnd;
 
 public:
-    Entity(Position pos, char icon, int fd) : pos(pos), icon(icon), fd(fd)
+    Entity(Position pos, char icon, WINDOW *wnd) : pos(pos), icon(icon), wnd(wnd)
     {
-        setcursor(fd, pos.x, pos.y);
-        write(fd, &icon, 1);
+        mvwaddch(wnd, pos.y, pos.x, icon);
         Log << "Entity(" << pos << ", '" << icon << "', wnd)" << endl;
     }
 
@@ -138,22 +97,19 @@ public:
     {
         swap(pos, other.pos);
         swap(icon, other.icon);
-        fd = other.fd;
+        wnd = other.wnd;
     }
 
     ~Entity()
     {
-        char empty = ' ';
-        setcursor(fd, pos.x, pos.y);
-        write(fd, &empty, 1);
+        mvwaddch(wnd, pos.y, pos.x, ' ');
         Log << "~Entity(" << pos << ", '" << icon << "', wnd)" << endl;
     }
 
     void SetIcon(char icon)
     {
         this->icon = icon;
-        setcursor(fd, pos.x, pos.y);
-        write(fd, &icon, 1);
+        mvwaddch(wnd, pos.y, pos.x, icon);
     }
 
     const Position &GetPosition() const
@@ -162,7 +118,7 @@ public:
     }
 };
 
-auto header = " SNEK v%s for vasilev.io SCORE: %d ";
+auto header = " SNEK v%s for vasilev.io SCORE: %d PRESS Q TO EXIT";
 auto version = "0.1a";
 
 auto randpos(int x0, int xmax, int y0, int ymax)
@@ -209,9 +165,6 @@ int create_and_bind()
     return server_fd;
 }
 
-#define COLS 80
-#define LINES 25
-
 int main(int argc, char *argv[])
 {
     int server_fd = create_and_bind();
@@ -226,22 +179,29 @@ int main(int argc, char *argv[])
     string socket = "/dev/fd/" + to_string(client_fd);
     dup2(client_fd, STDOUT_FILENO);
     dup2(client_fd, STDIN_FILENO);
-    write(client_fd, CSI "2J", 4);
+
     write(client_fd, "\377\375\042\377\373\001", 6);
-    srand(time(nullptr));
-    fcntl(STDIN_FILENO, F_SETFL, fcntl(0, F_GETFL) | O_NONBLOCK);
     for (int i = 0; i < 56; i++)
     {
         getchar();
     }
 
+    initscr();
+    auto wnd = newwin(LINES, COLS, 0, 0);
+    wborder(wnd, 0, 0, 0, 0, 0, 0, 0, 0);
+    nodelay(stdscr, true);
+    cbreak();
+    noecho();
+    curs_set(0);
+    srand(time(nullptr));
+
     Direction dir = Direction::Down;
-    Entity food = Entity(randpos(1, COLS - 1, 1, LINES - 1), '@', client_fd);
+    Entity food = Entity(randpos(1, COLS - 1, 1, LINES - 1), '@', wnd);
 
     list<Entity> snek;
-    snek.emplace_back(Position{40, 12}, 'O', client_fd);
-    snek.emplace_back(Position{39, 12}, 'o', client_fd);
-    snek.emplace_back(Position{38, 12}, 'o', client_fd);
+    snek.emplace_back(Position{40, 12}, 'O', wnd);
+    snek.emplace_back(Position{39, 12}, 'o', wnd);
+    snek.emplace_back(Position{38, 12}, 'o', wnd);
 
     int snek_length = 3;
 
@@ -251,12 +211,12 @@ int main(int argc, char *argv[])
         lost = true;
         snek.front().SetIcon('X');
 
-        // auto wnd2 = newwin(4, 16, LINES / 2 - 1, COLS / 2 - 8);
-        // wborder(wnd2, 0, 0, 0, 0, 0, 0, 0, 0);
-        // mvwaddstr(wnd2, 1, 1, "   YOU DIED");
-        // mvwaddstr(wnd2, 2, 1, "CTRL+C TO EXIT");
-        // wrefresh(wnd2);
-        // delwin(wnd2);
+        auto wnd2 = newwin(4, 18, LINES / 2 - 1, COLS / 2 - 9);
+        wborder(wnd2, 0, 0, 0, 0, 0, 0, 0, 0);
+        mvwaddstr(wnd2, 1, 1, "   YOU DIED");
+        mvwaddstr(wnd2, 2, 1, "DISCONNECTING...");
+        wrefresh(wnd2);
+        delwin(wnd2);
     };
 
     auto move_snek = [&] {
@@ -280,7 +240,7 @@ int main(int argc, char *argv[])
         if (newpos == food.GetPosition())
         {
             snek_length++;
-            auto newfood = Entity(randpos(1, COLS - 1, 1, LINES - 1), '@', client_fd);
+            auto newfood = Entity(randpos(1, COLS - 1, 1, LINES - 1), '@', wnd);
             food = move(newfood);
         }
         else
@@ -288,7 +248,7 @@ int main(int argc, char *argv[])
             head.SetIcon('o');
         }
 
-        snek.emplace_front(newpos, 'O', client_fd);
+        snek.emplace_front(newpos, 'O', wnd);
         while (snek.size() > snek_length)
         {
             snek.pop_back();
@@ -297,15 +257,15 @@ int main(int argc, char *argv[])
 
     for (;;)
     {
-        auto input = getchar();
+        auto input = getch();
         switch (input)
         {
         case '\033':
-            if (getchar() != '[')
+            if (getch() != '[')
             {
                 break;
             }
-            switch (getchar())
+            switch (getch())
             {
             case 'A':
                 dir = Direction::Up;
@@ -325,22 +285,20 @@ int main(int argc, char *argv[])
         case 'q':
             exit(EXIT_SUCCESS);
 
+        case ERR:
         default:
             break;
         }
 
         move_snek();
-        setcursor(client_fd, 2, 0);
+        mvwprintw(wnd, 0, 2, header, version, snek_length - 3);
+        wrefresh(wnd);
 
-        char buf[1024];
-        sprintf(buf, header, version, snek_length - 3);
-        write(client_fd, buf, strlen(buf));
-
-        // do
+        usleep(50'000);
+        if (lost)
         {
-            usleep(50'000);
+            usleep(3'000'000);
+            exit(EXIT_SUCCESS);
         }
-        //  while (lost);
-        cerr << "'" << char(input) << "'" << endl;
     }
 }
