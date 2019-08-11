@@ -1,4 +1,4 @@
-GXX=g++
+GXX=g++ -std=c++17
 
 snek: main.o
 	${GXX} -o $@ $^ -lncurses

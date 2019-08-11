@@ -8,6 +8,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <fcntl.h>
+#include <arpa/inet.h>
 
 using namespace std;
 
@@ -169,135 +170,154 @@ int main(int argc, char *argv[])
 {
     int server_fd = create_and_bind();
     int client_fd = 0;
-    if (client_fd = accept(server_fd, (sockaddr *)&address, &addrlen); client_fd < 0)
+
+    for (;;)
     {
-        perror("accept");
-        exit(EXIT_FAILURE);
-    }
-
-    auto out = fdopen(client_fd, "wb");
-    string socket = "/dev/fd/" + to_string(client_fd);
-    dup2(client_fd, STDOUT_FILENO);
-    dup2(client_fd, STDIN_FILENO);
-
-    write(client_fd, "\377\375\042\377\373\001", 6);
-    for (int i = 0; i < 56; i++)
-    {
-        getchar();
-    }
-
-    initscr();
-    auto wnd = newwin(LINES, COLS, 0, 0);
-    wborder(wnd, 0, 0, 0, 0, 0, 0, 0, 0);
-    nodelay(stdscr, true);
-    cbreak();
-    noecho();
-    curs_set(0);
-    srand(time(nullptr));
-
-    Direction dir = Direction::Down;
-    Entity food = Entity(randpos(1, COLS - 1, 1, LINES - 1), '@', wnd);
-
-    list<Entity> snek;
-    snek.emplace_back(Position{40, 12}, 'O', wnd);
-    snek.emplace_back(Position{39, 12}, 'o', wnd);
-    snek.emplace_back(Position{38, 12}, 'o', wnd);
-
-    int snek_length = 3;
-
-    bool lost = false;
-
-    auto lose = [&] {
-        lost = true;
-        snek.front().SetIcon('X');
-
-        auto wnd2 = newwin(4, 18, LINES / 2 - 1, COLS / 2 - 9);
-        wborder(wnd2, 0, 0, 0, 0, 0, 0, 0, 0);
-        mvwaddstr(wnd2, 1, 1, "   YOU DIED");
-        mvwaddstr(wnd2, 2, 1, "DISCONNECTING...");
-        wrefresh(wnd2);
-        delwin(wnd2);
-    };
-
-    auto move_snek = [&] {
-        auto &head = snek.front();
-        auto newpos = head.GetPosition().Translated(dir);
-        if (newpos.x == 0 || newpos.y == 0 || newpos.x >= COLS - 1 || newpos.y >= LINES - 1)
+        if (client_fd = accept(server_fd, (sockaddr *)&address, &addrlen); client_fd < 0)
         {
-            lose();
-            return;
+            perror("accept");
+            exit(EXIT_FAILURE);
         }
 
-        for (auto &&s : snek)
+        int pid = fork();
+        if (pid != 0)
         {
-            if (&s != &head && newpos == s.GetPosition())
+            char str[1024];
+            inet_ntop(AF_INET, &(address.sin_addr), str, INET_ADDRSTRLEN);
+            printf("Accepted connection from %s, creating child process %d", str, pid);
+            close(client_fd);
+            continue;
+        }
+
+        dup2(client_fd, STDOUT_FILENO);
+        dup2(client_fd, STDIN_FILENO);
+
+        write(client_fd, "\377\375\042\377\373\001", 6);
+        for (int i = 0; i < 56; i++)
+        {
+            getchar();
+        }
+
+        initscr();
+        auto wnd = newwin(LINES, COLS, 0, 0);
+        wborder(wnd, 0, 0, 0, 0, 0, 0, 0, 0);
+        nodelay(stdscr, true);
+        cbreak();
+        noecho();
+        curs_set(0);
+        srand(time(nullptr));
+
+        Direction dir = Direction::Down;
+        Entity food = Entity(randpos(1, COLS - 1, 1, LINES - 1), '@', wnd);
+
+        list<Entity> snek;
+        snek.emplace_back(Position{40, 12}, 'O', wnd);
+        snek.emplace_back(Position{39, 12}, 'o', wnd);
+        snek.emplace_back(Position{38, 12}, 'o', wnd);
+
+        int snek_length = 3;
+
+        bool lost = false;
+
+        auto lose = [&] {
+            lost = true;
+            snek.front().SetIcon('X');
+
+            auto wnd2 = newwin(4, 18, LINES / 2 - 1, COLS / 2 - 9);
+            wborder(wnd2, 0, 0, 0, 0, 0, 0, 0, 0);
+            mvwaddstr(wnd2, 1, 1, "   YOU DIED");
+            mvwaddstr(wnd2, 2, 1, "DISCONNECTING...");
+            wrefresh(wnd2);
+            delwin(wnd2);
+        };
+
+        auto move_snek = [&] {
+            auto &head = snek.front();
+            auto newpos = head.GetPosition().Translated(dir);
+            if (newpos.x == 0 || newpos.y == 0 || newpos.x >= COLS - 1 || newpos.y >= LINES - 1)
             {
                 lose();
                 return;
             }
-        }
 
-        if (newpos == food.GetPosition())
-        {
-            snek_length++;
-            auto newfood = Entity(randpos(1, COLS - 1, 1, LINES - 1), '@', wnd);
-            food = move(newfood);
-        }
-        else
-        {
-            head.SetIcon('o');
-        }
-
-        snek.emplace_front(newpos, 'O', wnd);
-        while (snek.size() > snek_length)
-        {
-            snek.pop_back();
-        }
-    };
-
-    for (;;)
-    {
-        auto input = getch();
-        switch (input)
-        {
-        case '\033':
-            if (getch() != '[')
+            for (auto &&s : snek)
             {
+                if (&s != &head && newpos == s.GetPosition())
+                {
+                    lose();
+                    return;
+                }
+            }
+
+            if (newpos == food.GetPosition())
+            {
+                snek_length++;
+                auto newfood = Entity(randpos(1, COLS - 1, 1, LINES - 1), '@', wnd);
+                food = move(newfood);
+            }
+            else
+            {
+                head.SetIcon('o');
+            }
+
+            snek.emplace_front(newpos, 'O', wnd);
+            while (snek.size() > snek_length)
+            {
+                snek.pop_back();
+            }
+        };
+
+        for (;;)
+        {
+            auto input = getch();
+            switch (input)
+            {
+            case '\033':
+                if (getch() != '[')
+                {
+                    break;
+                }
+                switch (getch())
+                {
+                case 'A':
+                    dir = Direction::Up;
+                    break;
+                case 'B':
+                    dir = Direction::Down;
+                    break;
+                case 'D':
+                    dir = Direction::Left;
+                    break;
+                case 'C':
+                    dir = Direction::Right;
+                    break;
+                }
+                break;
+
+            case 'q':
+                exit(EXIT_SUCCESS);
+
+            case ERR:
+            default:
                 break;
             }
-            switch (getch())
+
+            move_snek();
+            mvwprintw(wnd, 0, 2, header, version, snek_length - 3);
+            wrefresh(wnd);
+
+            usleep(100'000);
+            if (lost)
             {
-            case 'A':
-                dir = Direction::Up;
-                break;
-            case 'B':
-                dir = Direction::Down;
-                break;
-            case 'D':
-                dir = Direction::Left;
-                break;
-            case 'C':
-                dir = Direction::Right;
+                usleep(3'000'000);
                 break;
             }
-            break;
-
-        case 'q':
-            exit(EXIT_SUCCESS);
-
-        case ERR:
-        default:
-            break;
         }
 
-        move_snek();
-        mvwprintw(wnd, 0, 2, header, version, snek_length - 3);
-        wrefresh(wnd);
+        close(client_fd);
 
-        usleep(50'000);
-        if (lost)
+        if (pid == 0)
         {
-            usleep(3'000'000);
             exit(EXIT_SUCCESS);
         }
     }
