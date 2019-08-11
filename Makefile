@@ -6,5 +6,5 @@ snek: main.o
 clean:
 	rm -rf main.o snek
 
-main.o: main.cpp
-	${GXX} -c -o $@ $^
+main.o: main.cpp *.hpp *.h
+	${GXX} -c -o $@ main.cpp
