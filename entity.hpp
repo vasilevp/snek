@@ -43,6 +43,7 @@ public:
         std::swap(pos, other.pos);
         std::swap(icon, other.icon);
         std::swap(wnd, other.wnd);
+        return *this;
     }
 
     void SetIcon(char icon)

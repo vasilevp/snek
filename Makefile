@@ -1,10 +1,10 @@
-GXX=g++ -std=c++17
+CXX ?= g++ -std=c++17
 
 snek: main.o
-	${GXX} -o $@ $^ -lncurses
+	${CXX} -o $@ $^ -lncurses
 
 clean:
 	rm -rf main.o snek
 
 main.o: main.cpp *.hpp *.h
-	${GXX} -c -o $@ main.cpp
+	${CXX} -c -o $@ main.cpp

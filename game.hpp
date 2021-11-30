@@ -8,7 +8,7 @@ class Game
 public:
     bool lost = false;
     int snek_length = 3;
-    Direction dir = Direction::Down;
+    Direction dir = Direction::Right;
     Entity food = Entity(Position{-1, -1}, ' ', nullptr);
     std::list<Entity> snek;
     WINDOW *wnd = nullptr;
@@ -32,47 +32,49 @@ public:
         // create starting food
         food = Entity(Position::Random(1, COLS - 1, 1, LINES - 1), '@', wnd);
 
-        // create starting snek body
-        snek.emplace_back(Position{40, 12}, 'O', wnd);
-        snek.emplace_back(Position{39, 12}, 'o', wnd);
-        snek.emplace_back(Position{38, 12}, 'o', wnd);
+        // create snek head
+        snek.emplace_back(Position{COLS / 2, LINES / 2}, 'O', wnd);
     }
 
     void Run()
     {
         for (;;)
         {
-            auto input = getch();
-            switch (input)
+            int input = 0;
+            while (input != ERR)
             {
-            case '\033':
-                if (getch() != '[')
+                input = getch();
+                switch (input)
                 {
+                case '\033':
+                    if (getch() != '[')
+                    {
+                        break;
+                    }
+                    switch (getch())
+                    {
+                    case 'A':
+                        dir = Direction::Up;
+                        break;
+                    case 'B':
+                        dir = Direction::Down;
+                        break;
+                    case 'D':
+                        dir = Direction::Left;
+                        break;
+                    case 'C':
+                        dir = Direction::Right;
+                        break;
+                    }
+                    break;
+
+                case 'q':
+                    exit(EXIT_SUCCESS);
+
+                case ERR:
+                default:
                     break;
                 }
-                switch (getch())
-                {
-                case 'A':
-                    dir = Direction::Up;
-                    break;
-                case 'B':
-                    dir = Direction::Down;
-                    break;
-                case 'D':
-                    dir = Direction::Left;
-                    break;
-                case 'C':
-                    dir = Direction::Right;
-                    break;
-                }
-                break;
-
-            case 'q':
-                exit(EXIT_SUCCESS);
-
-            case ERR:
-            default:
-                break;
             }
 
             Tick();
@@ -84,6 +86,11 @@ public:
             {
                 break;
             }
+
+            if (input != -1)
+            {
+                fprintf(stderr, "received input %d\n", input);
+            }
         }
         wclear(wnd);
     }
@@ -92,6 +99,7 @@ public:
     {
         lost = true;
         snek.front().SetIcon('X');
+        wrefresh(wnd);
 
         // create a window with game over text
         auto wnd2 = newwin(4, 18, LINES / 2 - 1, COLS / 2 - 9);
@@ -137,7 +145,13 @@ public:
         if (newpos == food.GetPosition())
         {
             snek_length++;
-            auto newfood = Entity(Position::Random(1, COLS - 1, 1, LINES - 1), '@', wnd);
+
+            // generate random food position until it is not inside snek
+            auto pos = Position::Random(1, COLS - 1, 1, LINES - 1);
+            while (std::any_of(snek.begin(), snek.end(), [&](auto &e) { return e.GetPosition() == pos; }))
+                pos = Position::Random(1, COLS - 1, 1, LINES - 1);
+
+            auto newfood = Entity(pos, '@', wnd);
             food = std::move(newfood);
         }
         else

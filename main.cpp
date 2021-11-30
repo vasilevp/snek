@@ -12,6 +12,7 @@ using namespace std;
 
 int main(int argc, char *argv[])
 {
+    setlocale(LC_ALL, "C");
     int server_fd = start_server();
 
     for (;;)
@@ -23,7 +24,7 @@ int main(int argc, char *argv[])
         {
             char str[1024];
             inet_ntop(AF_INET, &(address.sin_addr), str, INET_ADDRSTRLEN);
-            printf("Accepted connection from %s, creating child process %d", str, pid);
+            fprintf(stdout, "Accepted connection from %s, creating child process %d", str, pid);
             close(client_fd);
             continue;
         }
@@ -34,10 +35,6 @@ int main(int argc, char *argv[])
 
         // set the correct telnet parameters
         write(client_fd, "\377\375\042\377\373\001", 6);
-
-        // read telnet greeting, ignore it
-        char buf[1024];
-        read(client_fd, buf, 1024);
 
         Game g;
         g.Run();
